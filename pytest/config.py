@@ -1,0 +1,6 @@
+
+consumer_key = "q3dhOJ7y2afCCF7wdJPhZKwot" 
+consumer_secret = "qmRYYEXHDD01nYfgL9tBcmiYuGSVQOmJiPyvjnp7epHuPNIl3Q" 
+access_token = "1374444599461113862-T6HUWMawXt6vohzo72saJVeRu5605G"  
+access_token_secret = "jMp0W6rx0sGT3ad5fYI9RCtvLlAUFiAcO7GRpoJTbtC2x" 
+#bareer AAAAAAAAAAAAAAAAAAAAAFlUaQEAAAAABB0gAV5vgpMYUGXS%2BEPGeyIfyXM%3Dxckirl9SqfwNYtRbGEWkNNgqqmCpiEaeUxIExaR4kMVSapATJz
