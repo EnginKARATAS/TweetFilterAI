@@ -2,6 +2,12 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp();
 const dbRef = admin.firestore().doc("tokens/demo");
+const { Configuration, OpenAIApi } = require("openai");
+
+const configuration = new Configuration({
+  apiKey: "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",
+});
+const openai = new OpenAIApi(configuration);
 
 const TwitterApi = require("twitter-api-v2").default;
 const twitterClient = new TwitterApi({
@@ -37,7 +43,7 @@ exports.auth = functions.https.onRequest((request, response) => {
     });
 });
 
-// STEP 2 - Verify callback code, store access_token 
+// STEP 2 - Verify callback code, store access_token
 exports.callback = functions.https.onRequest(async (request, response) => {
   const { state, code } = request.query;
 
@@ -45,7 +51,7 @@ exports.callback = functions.https.onRequest(async (request, response) => {
   const { codeVerifier, state: storedState } = dbSnapshot.data();
 
   if (state !== storedState) {
-    return response.status(400).send('Stored tokens do not match!');
+    return response.status(400).send("Stored tokens do not match!");
   }
 
   const {
@@ -66,38 +72,44 @@ exports.callback = functions.https.onRequest(async (request, response) => {
   response.send(data);
 });
 
-exports.tweet = functions.https.onRequest((request, response) => {
-  dbRef
-    .get()
-    .then(({ data: { refreshToken } }) => {
-      return twitterClient.refreshOAuth2Token(refreshToken);
-    })
-    .then(
-      ({
-        client: refreshedClient,
-        accessToken,
-        refreshToken: newRefreshToken,
-      }) => {
-        return dbRef
-          .set({ accessToken, refreshToken: newRefreshToken })
-          .then(() =>
-            openai.createCompletion("text-davinci-001", {
-              prompt: "tweet something cool for #techtwitter",
-              max_tokens: 64,
-            })
-          )
-          .then(({ data: { choices } }) =>
-            refreshedClient.v2.tweet(choices[0].text)
-          );
-      }
-    )
-    .then(({ data }) => {
-      response.send(data);
-    })
-    .catch((error) => {
-      console.error(error);
-      response
-        .status(500)
-        .send("Error refreshing OAuth2 token or posting tweet");
+exports.tweet = functions.https.onRequest(async (request, response) => {
+  const { refreshToken } = (await dbRef.get()).data();
+
+  const {
+    client: refreshedClient,
+    accessToken,
+    refreshToken: newRefreshToken,
+  } = await twitterClient.refreshOAuth2Token(refreshToken);
+
+  const history = [];
+
+  await dbRef.set({ accessToken, refreshToken: newRefreshToken });
+
+  const user_input = "I feel alone";
+  const messages = [];
+  for (const [input_text, completion_text] of history) {
+    messages.push({ role: "user", content: input_text });
+  }
+  messages.push({ role: "user", content: user_input });
+
+  try {
+    const completion = await openai.createChatCompletion({
+      model: "gpt-3.5-turbo",
+      messages: messages,
     });
+
+    const completion_text = completion.data.choices[0].message.content;
+    console.log(completion_text);
+
+    history.push([user_input, completion_text]);
+  } catch (error) {
+    if (error.response) {
+      console.log(error.response.status);
+      console.log(error.response.data);
+    } else {
+      console.log(error.message);
+    }
+  }
+
+  response.send(history);
 });

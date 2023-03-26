@@ -3,5 +3,23 @@
     "firebase": "^9.18.0",
     "openai": "^3.2.1",
     "twitter-api-v2": "^1.14.2"
-  }
+  },
+  "name": "tweetfilterai",
+  "version": "1.0.0",
+  "main": "testo.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EnginKARATAS/TweetFilterAI.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/EnginKARATAS/TweetFilterAI/issues"
+  },
+  "homepage": "https://github.com/EnginKARATAS/TweetFilterAI#readme",
+  "description": ""
 }
