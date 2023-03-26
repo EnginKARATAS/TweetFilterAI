@@ -1,0 +1,2 @@
+bunu ekle 
+https://tfa-backend.firebaseapp.com/__/auth/handler
