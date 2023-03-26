@@ -3,6 +3,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import openai
 from flask import Flask, jsonify
+import requests
+from requests_oauthlib import OAuth2Session
 
 # Twitter API anahtarları
 consumer_key = 'TwHZLdPid6ysqLkiCM4bjwdsk'
@@ -99,5 +101,50 @@ def get_filtered_tweets(test):
     # Filtrelenmiş tweetleri Flask API'si olarak sunma
     return jsonify('{0}: {1}\n'.format(conversation[-1]['role'].strip(), conversation[-1]['content'].strip()))
 
+
+
+from requests_oauthlib import OAuth1Session
+from flask import Flask, request, redirect
+redirectUri="https://tfa-backend.firebaseapp.com/__/auth/handle"
+twitter_session = OAuth1Session(consumer_key, client_secret=consumer_secret, callback_uri=redirectUri)
+
+@app.route('/')
+def index():
+    # Twitter'a doğrulama isteği gönderiyoruz
+    request_token_url = 'https://api.twitter.com/oauth/request_token'
+    fetch_response = twitter_session.fetch_request_token(request_token_url)
+
+    # Twitter kullanıcısını doğrulama sayfasına yönlendiriyoruz
+    auth_url = twitter_session.authorization_url('https://api.twitter.com/oauth/authenticate')
+    return redirect(auth_url)
+
+@app.route('/callback')
+def callback():
+    # Twitter'dan dönen verileri alıyoruz
+    oauth_verifier = request.args.get('oauth_verifier')
+    access_token_url = 'https://api.twitter.com/oauth/access_token'
+
+    # Access token ve access token secret değerlerini elde ediyoruz
+    twitter_session.fetch_access_token(access_token_url, verifier=oauth_verifier)
+    access_token = twitter_session.access_token
+    access_token_secret = twitter_session.access_token_secret
+
+    # Access token ve access token secret değerlerini kullanarak Twitter API'ye erişebilirsiniz
+    # Örnek olarak kullanıcı bilgilerini alabiliriz
+    user_info_url = 'https://api.twitter.com/1.1/account/verify_credentials.json'
+    response = twitter_session.get(user_info_url)
+    user_info = response.json()
+    return f'Hello, {user_info["name"]}!'
+@app.route('/auth', methods=['GET'])
+def twitter_auth():
+    authorization_base_url = 'https://api.twitter.com/oauth2/token'
+    oauth = OAuth2Session(consumer_key, redirect_uri=redirectUri, scope=[''])
+    headers = {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'}
+    data = {'grant_type': 'client_credentials'}
+
+    r = oauth.post(authorization_base_url, headers=headers, data=data, auth=(consumer_key, consumer_secret))
+    return r.json()
+
+ 
 if __name__ == '__main__':
     app.run(debug=True)
