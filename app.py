@@ -18,11 +18,24 @@ db = firestore.client()
 
 # OpenAI API anahtarı
 openai.api_key = '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'
+model_id = 'gpt-3.5-turbo'
 
 # Twitter API'ye bağlanma
 auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
 auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
+
+#--------------------------------------------
+def ChatGPT_conversation(conversation):
+    response = openai.ChatCompletion.create(
+        model=model_id,
+        messages=conversation
+    )
+    conversation.append({'role': response.choices[0].message.role, 'content': response.choices[0].message.content})
+    return conversation
+
+
+#--------------------------------------------
 
 # Tweetleri Firebase veritabanına kaydetme
 def save_tweets_to_firebase(tweets, username):
@@ -61,18 +74,30 @@ app = Flask(__name__)
 @app.route('/<test>', methods=['GET'])
 def get_filtered_tweets(test):
     # Tweetleri çekme
-    tweets = api.user_timeline(screen_name="enginowhere", count=5)
+    saltTweets = ""
+    tweets = api.user_timeline(screen_name="enginowhere", count=20, exclude_replies=True, include_rts=False)   
     for tweet in tweets:
+        saltTweets += tweet.text
         print(tweet.text)
 
+    conversation = []
+    conversation.append({'role': 'user', 'content': 'I`ll act like fortune teller. I will say everything that your personality'})
+    conversation = ChatGPT_conversation(conversation)
+    print('{0}: {1}\n'.format(conversation[-1]['role'].strip(), conversation[-1]['content'].strip()))
+
+    prompt = "what can you tell me about me? " + saltTweets
+    conversation.append({'role': 'user', 'content': prompt})
+    conversation = ChatGPT_conversation(conversation)
+ 
+
     # Tweetleri Firebase veritabanına kaydetme
-    save_tweets_to_firebase(tweets, test)
+    # save_tweets_to_firebase(tweets, test)
 
     # Tweetleri OpenAI API'si ile filtreleme
-    filtered_tweets = filter_tweets_with_openai(tweets)
+    # filtered_tweets = filter_tweets_with_openai(tweets)
 
     # Filtrelenmiş tweetleri Flask API'si olarak sunma
-    return jsonify(filtered_tweets)
+    return jsonify('{0}: {1}\n'.format(conversation[-1]['role'].strip(), conversation[-1]['content'].strip()))
 
 if __name__ == '__main__':
     app.run(debug=True)
