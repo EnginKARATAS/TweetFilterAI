@@ -3,11 +3,10 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 const dbRef = admin.firestore().doc("tokens/demo");
 
-const Twitter = require("twitter-lite");
 const TwitterApi = require("twitter-api-v2").default;
 const twitterClient = new TwitterApi({
   clientId: "RlFKWmFfOHJoRnNuR2hFZVVjVGs6MTpjaQ",
-  clientSecret: "pwpIkY1sHdJ3yjwfLwytLS2NUZ76R5i4VD70wr3hQKq13W69zw",
+  clientSecret: "HPSqjSr5LKvwnE_7HBKBzPl4ulE298Em-Trt4g01W5QRnZOVH8",
 });
 
 const callbackURL = "http://localhost:5000/tfa-backend/us-central1/callback";
@@ -38,34 +37,58 @@ exports.auth = functions.https.onRequest((request, response) => {
     });
 });
 
-exports.callback = functions.https.onRequest((request, response) => {
+// STEP 2 - Verify callback code, store access_token 
+exports.callback = functions.https.onRequest(async (request, response) => {
   const { state, code } = request.query;
 
+  const dbSnapshot = await dbRef.get();
+  const { codeVerifier, state: storedState } = dbSnapshot.data();
+
+  if (state !== storedState) {
+    return response.status(400).send('Stored tokens do not match!');
+  }
+
+  const {
+    client: loggedClient,
+    accessToken,
+    refreshToken,
+  } = await twitterClient.loginWithOAuth2({
+    code,
+    codeVerifier,
+    redirectUri: callbackURL,
+  });
+
+  await dbRef.set({ accessToken, refreshToken });
+
+  const { data } = await loggedClient.v2.me(); // start using the client if you want
+
+  //giriş başarılı anasayfaya yönlendir. sonrasında tokenler ile istekte bulun
+  response.send(data);
+});
+
+exports.tweet = functions.https.onRequest((request, response) => {
   dbRef
     .get()
-    .then((dbSnapshot) => {
-      const { codeVerifier, state: storedState } = dbSnapshot.data();
-
-      if (state !== storedState) {
-        return response.status(400).send("Stored tokens do not match!");
-      }
-
-      return twitterClient.loginWithOAuth2({
-        code,
-        codeVerifier,
-        redirectUri: callbackURL,
-      });
+    .then(({ data: { refreshToken } }) => {
+      return twitterClient.refreshOAuth2Token(refreshToken);
     })
     .then(
       ({
-        client: loggedClient,
+        client: refreshedClient,
         accessToken,
-        accessTokenSecret,
-        refreshToken,
+        refreshToken: newRefreshToken,
       }) => {
         return dbRef
-          .set({ accessToken, refreshToken })
-          .then(() => loggedClient.v2.me());
+          .set({ accessToken, refreshToken: newRefreshToken })
+          .then(() =>
+            openai.createCompletion("text-davinci-001", {
+              prompt: "tweet something cool for #techtwitter",
+              max_tokens: 64,
+            })
+          )
+          .then(({ data: { choices } }) =>
+            refreshedClient.v2.tweet(choices[0].text)
+          );
       }
     )
     .then(({ data }) => {
@@ -75,50 +98,6 @@ exports.callback = functions.https.onRequest((request, response) => {
       console.error(error);
       response
         .status(500)
-        .send("Error refreshing OAuth2 token or fetching user data");
+        .send("Error refreshing OAuth2 token or posting tweet");
     });
 });
-
-//get tweets just for the user tweets twenty percent
-exports.getTweets = functions.https.onRequest(async (request, response) => {
-  const { refreshToken } = (await dbRef.get()).data();
-  const {
-    client: refreshedClient,
-    accessToken,
-    refreshToken: newRefreshToken,
-  } = await twitterClient.refreshOAuth2Token(refreshToken);
-  await dbRef.set({ accessToken, refreshToken: newRefreshToken });
-
-  const { data } = await refreshedClient.v2.me();
-
-  const client = new Twitter({
-    access_token_key,
-    access_token_secret,
-    consumer_key: "RlFKWmFfOHJoRnNuR2hFZVVjVGs6MTpjaQ",
-    consumer_secret: "pwpIkY1sHdJ3yjwfLwytLS2NUZ76R5i4VD70wr3hQKq13W69zw",
-  });
-
-  const user_id = data.id; // the user id whose tweets you want to retrieve
-  const params = { user_id, exclude_replies: true, count: 10 }; // set the parameters for the API request
-
-  client.get("statuses/user_timeline", params, (err, data, response) => {
-    if (err) {
-      console.error(err);
-      return;
-    }
-    console.log(data); // an array of tweet objects
-  });
-
-  response.send(tweets);
-  // refreshedClient.v2
-  //   .userTimeline(data.id, { exclude: "replies" })
-  //   .then((tweets) => {
-  //     response.send(tweets);
-  //   });
-});
-// while (!userTimeline.done) {
-//   for (const fetchedTweet of userTimeline) {
-//     console.log(fetchedTweet.text);
-//     await userTimeline.fetchNext();
-//   }
-// }
