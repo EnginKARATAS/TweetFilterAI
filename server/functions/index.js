@@ -1,115 +1,82 @@
-const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const dotenv = require("dotenv");
+dotenv.config();
 admin.initializeApp();
-const dbRef = admin.firestore().doc("tokens/demo");
-const { Configuration, OpenAIApi } = require("openai");
 
-const configuration = new Configuration({
-  apiKey: "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",
+const functions = require("firebase-functions");
+
+import { TwitterAuthProvider } from "firebase/auth";
+//end packages
+const db = admin.firestore();
+const usersCollection = db.collection("users");
+
+const saveUser = async (userId, userData) => {
+  const userRef = usersCollection.doc(userId);
+  await userRef.set(userData);
+};
+
+const { TwitterApi } = require("twitter-api-v2");
+
+const client = new TwitterApi({
+  appKey: process.env.TWITTER_API_KEY,
+  appSecret: process.env.TWITTER_API_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
 });
-const openai = new OpenAIApi(configuration);
 
-const TwitterApi = require("twitter-api-v2").default;
-const twitterClient = new TwitterApi({
-  clientId: "RlFKWmFfOHJoRnNuR2hFZVVjVGs6MTpjaQ",
-  clientSecret: "HPSqjSr5LKvwnE_7HBKBzPl4ulE298Em-Trt4g01W5QRnZOVH8",
-});
+//firebase auth
+const auth = getAuth();
 
-const callbackURL = "http://localhost:5000/tfa-backend/us-central1/callback";
+const getUserData = async (username) => {
+  const user = await client.v2.userByUsername(username).then((res) => res.data);
+  console.log(user);
+  return {
+    name: user.name,
+    username: user.username,
+    followers: user.public_metrics.followers_count,
+    following: user.public_metrics.following_count,
+    tweetCount: user.public_metrics.tweet_count,
+    description: user.description,
+    location: user.location,
+    profileImageUrl: user.profile_image_url,
+    verified: user.verified,
+  };
+};
 
-exports.auth = functions.https.onRequest((request, response) => {
-  const { url, codeVerifier, state } = twitterClient.generateOAuth2AuthLink(
-    callbackURL,
-    { scope: ["tweet.read"] }
-  );
-  dbRef.set({ codeVerifier, state });
+const saveTwitterUser = async (username) => {
+  const userData = await getUserData(username);
+  await saveUser(userData.username, userData);
+};
 
-  response.redirect(url);
-});
-exports.auth = functions.https.onRequest((request, response) => {
-  const { url, codeVerifier, state } = twitterClient.generateOAuth2AuthLink(
-    callbackURL,
-    { scope: ["tweet.read", "tweet.write", "users.read", "offline.access"] }
-  );
+exports.firebaseAuthTest = functions.https.onRequest((req, res) => {
+  signInWithPopup(auth, provider)
+    .then((result) => {
+      // This gives you a the Twitter OAuth 1.0 Access Token and Secret.
+      // You can use these server side with your app's credentials to access the Twitter API.
+      const credential = TwitterAuthProvider.credentialFromResult(result);
+      const token = credential.accessToken;
+      const secret = credential.secret;
 
-  dbRef
-    .set({ codeVerifier, state })
-    .then(() => {
-      response.redirect(url);
+      // The signed-in user info.
+      const user = result.user;
+      // IdP data available using getAdditionalUserInfo(result)
+      // ...
     })
     .catch((error) => {
-      console.error(error);
-      response.status(500).send("Error setting code verifier and state");
+      // Handle Errors here.
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      // The email of the user's account used.
+      const email = error.customData.email;
+      // The AuthCredential type that was used.
+      const credential = TwitterAuthProvider.credentialFromError(error);
+      // ...
     });
 });
 
-// STEP 2 - Verify callback code, store access_token
-exports.callback = functions.https.onRequest(async (request, response) => {
-  const { state, code } = request.query;
-
-  const dbSnapshot = await dbRef.get();
-  const { codeVerifier, state: storedState } = dbSnapshot.data();
-
-  if (state !== storedState) {
-    return response.status(400).send("Stored tokens do not match!");
-  }
-
-  const {
-    client: loggedClient,
-    accessToken,
-    refreshToken,
-  } = await twitterClient.loginWithOAuth2({
-    code,
-    codeVerifier,
-    redirectUri: callbackURL,
-  });
-
-  await dbRef.set({ accessToken, refreshToken });
-
-  const { data } = await loggedClient.v2.me(); // start using the client if you want
-
-  //giriş başarılı anasayfaya yönlendir. sonrasında tokenler ile istekte bulun
-  response.send(data);
-});
-
-exports.tweet = functions.https.onRequest(async (request, response) => {
-  const { refreshToken } = (await dbRef.get()).data();
-
-  const {
-    client: refreshedClient,
-    accessToken,
-    refreshToken: newRefreshToken,
-  } = await twitterClient.refreshOAuth2Token(refreshToken);
-
-  const history = [];
-
-  await dbRef.set({ accessToken, refreshToken: newRefreshToken });
-
-  const user_input = "I feel alone";
-  const messages = [];
-  for (const [input_text, completion_text] of history) {
-    messages.push({ role: "user", content: input_text });
-  }
-  messages.push({ role: "user", content: user_input });
-
-  try {
-    const completion = await openai.createChatCompletion({
-      model: "gpt-3.5-turbo",
-      messages: messages,
-    });
-
-    const completion_text = completion.data.choices[0].message.content;
-    console.log(completion_text);
-
-    history.push([user_input, completion_text]);
-  } catch (error) {
-    if (error.response) {
-      console.log(error.response.status);
-      console.log(error.response.data);
-    } else {
-      console.log(error.message);
-    }
-  }
-
-  response.send(history);
+exports.saveTwitterUser = functions.https.onRequest((req, res) => {
+  saveTwitterUser("enginowhere").then(() =>
+    console.log("Kullanıcı Firestore'a kaydedildi.")
+  );
+  res.send("Kullanıcı Firestore'a kaydedildi.");
 });
